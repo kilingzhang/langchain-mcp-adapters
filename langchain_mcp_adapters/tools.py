@@ -48,6 +48,40 @@ NonTextContent = ImageContent | AudioContent | ResourceLink | EmbeddedResource
 MAX_ITERATIONS = 1000
 
 
+def _normalize_json_schema(schema: dict[str, Any] | None) -> dict[str, Any]:
+    """Normalize JSON schema to ensure compatibility with OpenAI API requirements.
+
+    OpenAI API requires that object schemas must include a 'properties' field,
+    even if it's an empty object. This function ensures the schema is properly formatted.
+
+    Args:
+        schema: The JSON schema dictionary to normalize. Can be None.
+
+    Returns:
+        Normalized JSON schema dictionary. If input is None, returns a default
+        empty object schema.
+
+    Examples:
+        >>> _normalize_json_schema({"type": "object"})
+        {"type": "object", "properties": {}}
+        >>> _normalize_json_schema(None)
+        {"type": "object", "properties": {}}
+        >>> _normalize_json_schema({"type": "object", "properties": {"x": {"type": "string"}}})
+        {"type": "object", "properties": {"x": {"type": "string"}}}
+    """
+    if schema is None:
+        return {"type": "object", "properties": {}}
+
+    # Make a copy to avoid mutating the original
+    normalized = dict(schema)
+
+    # If schema has type "object" but missing "properties", add empty properties
+    if normalized.get("type") == "object" and "properties" not in normalized:
+        normalized["properties"] = {}
+
+    return normalized
+
+
 def _convert_call_tool_result(
     call_tool_result: MCPToolCallResult,
 ) -> tuple[str | list[str], list[NonTextContent] | None]:
@@ -296,10 +330,13 @@ def convert_mcp_tool_to_langchain_tool(
     meta = {"_meta": meta} if meta is not None else {}
     metadata = {**base, **meta} or None
 
+    # Normalize the schema to ensure compatibility with OpenAI API requirements
+    normalized_schema = _normalize_json_schema(tool.inputSchema)
+
     return StructuredTool(
         name=tool.name,
         description=tool.description or "",
-        args_schema=tool.inputSchema,
+        args_schema=normalized_schema,
         coroutine=call_tool,
         response_format="content_and_artifact",
         metadata=metadata,
